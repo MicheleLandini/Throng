@@ -1,0 +1,5 @@
+streamlit
+reportlab
+Pillow
+pandas
+google-generativeai
