@@ -336,21 +336,26 @@ if st.session_state.page == "home":
 
     st.title("Home - Gestionale schede palestra")
 
-    col1, col2, col3 = st.columns(3)
+    #col1, col2, col3 = st.columns(3)
 
-    with col1:
-        if st.button("Crea scheda cliente", key="btn_crea_scheda", on_click=vai_a, args=("info_cliente",)):
-            pass
+    #with col1:
+        #if st.button("Crea scheda cliente", key="btn_crea_scheda", on_click=vai_a, args=("info_cliente",)):
+            #pass
 
-    with col2:
-        if st.button("Modifica esercizi", key="btn_mod_esercizi", on_click=vai_a, args=("modifica_modelli",)):
+    #with col2:
+        #if st.button("Modifica esercizi", key="btn_mod_esercizi", on_click=vai_a, args=("modifica_modelli",)):
             #vai_a("modifica_modelli")
-            pass
+            #pass
             
-    with col3:
-        if st.button("Mod. stile scheda", key="btn_mod_scheda", on_click=vai_a, args=("stile_scheda",)):
+    #with col3:
+        #if st.button("Mod. stile scheda", key="btn_mod_scheda", on_click=vai_a, args=("stile_scheda",)):
             #vai_a("info_cliente")
-            pass
+            #pass
+
+    with st.container():
+        st.button("➕ Crea scheda cliente", key="btn_crea_scheda", use_container_width=True, on_click=vai_a, args=("info_cliente",))
+        st.button("✏️ Modifica esercizi", key="btn_mod_esercizi", use_container_width=True, on_click=vai_a, args=("modifica_modelli",))
+        st.button("🎨 Mod. stile scheda", key="btn_mod_scheda", use_container_width=True, on_click=vai_a, args=("stile_scheda",))
 
 # ===============================================================
 # PAGINA: Gestione PDF esistenti
