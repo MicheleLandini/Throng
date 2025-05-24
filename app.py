@@ -95,6 +95,9 @@ def crea_scheda_pdf(nome, livello, obiettivo, esercizi_per_giorno):
     stile_delimitatore = settings.get("stile_delimitatore", "Linea semplice")
     dim_logo = settings.get("dimimm", 500)  # in pixel, lo convertiremo
     dim_es = settings.get("dimimmes", 4)
+    dimtitoli = settings.get("dimtitoli", 18)     # default 18 pt
+    dimtesti = settings.get("dimtesti", 12)       # default 12 pt
+    dimgset = settings.get("dimgset", 14)         # default 14 pt
 
     # NUOVA FUNZIONE: Processa immagini per gestire trasparenza
     def processa_immagine_per_pdf(image_path, background_color):
@@ -156,29 +159,38 @@ def crea_scheda_pdf(nome, livello, obiettivo, esercizi_per_giorno):
     c.setFillColor(colore_sfondo)
     c.rect(0, 0, width, height, fill=True, stroke=False)
     
-    # Logo (MODIFICATO per gestire trasparenza)
+    # Logo (MODIFICATO per gestire trasparenza e posizione dinamica)
     logo_path = "static/logo_scheda.png"
     if os.path.isfile(logo_path):
         try:
             # Usa la nuova funzione per processare il logo
             logo_processed = processa_immagine_per_pdf(logo_path, colore_sfondo)
-            
+
             if logo_processed:
                 logo_width, logo_height = logo_processed.getSize()
                 max_width = (dim_logo / 100) * cm
                 scale = max_width / logo_width
                 logo_width_scaled = logo_width * scale
                 logo_height_scaled = logo_height * scale
+
+                # Posiziona il logo vicino alla parte alta della pagina con piccolo margine
+                top_margin = 20  # margine superiore in punti (puoi ridurre/incrementare)
+                logo_y = height - logo_height_scaled - top_margin
+
                 c.drawImage(
                     logo_processed,
                     x=(width - logo_width_scaled) / 2,
-                    y=y - logo_height_scaled,
+                    y=logo_y,
                     width=logo_width_scaled,
                     height=logo_height_scaled
                 )
-                y -= logo_height_scaled + 10
+
+                # Aggiorna y per il contenuto successivo
+                y = logo_y - 20  # spazio tra il logo e il resto del contenuto
+
         except Exception as e:
             print(f"Errore nel caricare il logo: {e}")
+
 
     def get_font_bold(base_font):
         return font_bold_map.get(base_font, base_font)
@@ -186,7 +198,7 @@ def crea_scheda_pdf(nome, livello, obiettivo, esercizi_per_giorno):
     def disegna_titolo_principale():
         nonlocal y
         font_bold = get_font_bold(font)
-        c.setFont(font_bold, 18)
+        c.setFont(font_bold, dimtitoli)
         c.setFillColor(colore_titoli)
         c.drawCentredString(width / 2, y, "Scheda di Allenamento")
         y -= 2 * line_height
@@ -200,29 +212,37 @@ def crea_scheda_pdf(nome, livello, obiettivo, esercizi_per_giorno):
             ("Obiettivo:", obiettivo),
             ("Giorni di allenamento:", ', '.join(esercizi_per_giorno.keys()))
         ]
+            # Calcola altezza riga dinamica (es. 1.6 volte il font più grande)
+        max_font_size = max(dimtitoli, dimtesti)
+        dynamic_line_height = max_font_size * 1.6
+
         for etichetta, valore in info:
-            c.setFont(font_bold, 12)
+            c.setFont(font_bold, dimtitoli)
             c.setFillColor(colore_titoli)
             c.drawString(margin_x, y, etichetta)
-            etichetta_width = c.stringWidth(etichetta, font_bold, 12)
-            c.setFont(font, 12)
+
+            etichetta_width = c.stringWidth(etichetta, font_bold, dimtitoli)
+
+            c.setFont(font, dimtesti)
             c.setFillColor(colore_testo)
-            c.drawString(margin_x + etichetta_width + 5, y, str(valore))
-            y -= line_height
+            c.drawString(margin_x + etichetta_width + 10, y, str(valore))
+
+            y -= dynamic_line_height  # usa altezza riga dinamica
 
         y -= 4
         disegna_delimitatore()
         y -= line_height
-        y -= 4
+        #y -= 6
+        y -= dynamic_line_height  # usa altezza riga dinamica
 
     def disegna_titolo_giorno(giorno):
         nonlocal y
         font_bold = get_font_bold(font)
-        c.setFont(font_bold, 14)
+        c.setFont(font_bold, dimgset)
         c.setFillColor(colore_g_settimana)
         c.drawString(margin_x, y, giorno)
         y -= line_height * 1.5
-        c.setFont(font, 12)
+        c.setFont(font, dimtesti)
         c.setFillColor(colore_testo)
 
     def disegna_delimitatore():
@@ -271,7 +291,9 @@ def crea_scheda_pdf(nome, livello, obiettivo, esercizi_per_giorno):
                 except Exception as e:
                     print(f"Errore immagine '{immagine_path}': {e}")
                     img_height = 0
-
+            # Calcola altezza riga dinamica (es. 1.6 volte il font più grande)
+            max_font_size = max(dimtitoli, dimtesti)
+            dynamic_line_height = max_font_size * 1.6
             spazio_necessario = line_height + (img_height + 10 if img_height else 10)
             if y - spazio_necessario < margin_y:
                 c.showPage()
@@ -283,7 +305,7 @@ def crea_scheda_pdf(nome, livello, obiettivo, esercizi_per_giorno):
 
                 # Ridisegna solo se è un nuovo giorno
                 if nuovo_giorno:
-                    c.setFont(font, 12)
+                    c.setFont(font, dimtesti)
                     c.setFillColor(colore_testo)
                     disegna_titolo_giorno(giorno)
                     nuovo_giorno = False
@@ -294,17 +316,21 @@ def crea_scheda_pdf(nome, livello, obiettivo, esercizi_per_giorno):
                 nuovo_giorno = False
 
             c.setFillColor(colore_testo)
-            c.setFont(font, 12)
+            c.setFont(font, dimtesti)
             c.drawString(margin_x, y, testo)
-            y -= line_height
+            y -= dynamic_line_height  # Spazio extra sotto il testo dell’esercizio
 
             if img_processed and img_height:
-                c.drawImage(img_processed, margin_x, y - img_height, width=img_width, height=img_height)
+                # Posizionare immagine a destra, rispettando i margini
+                img_x = width - margin_x - img_width
+                img_y = y - img_height
+                c.drawImage(img_processed, img_x, img_y, width=img_width, height=img_height)
                 y -= img_height + 10
             else:
                 y -= 10
 
-        y -= line_height
+
+        y -= dynamic_line_height  # Spazio extra sotto il testo dell’esercizio
 
     c.save()
     return filename
@@ -328,7 +354,7 @@ if st.session_state.page == "home":
     st.markdown(
         f"""
         <div style="display: flex; justify-content: center;">
-            <img src="data:image/png;base64,{img_base64}" width="150" height="150" style="object-fit: contain;" />
+            <img src="data:image/png;base64,{img_base64}" width="100" height="100" style="object-fit: contain;" />
         </div>
         """,
         unsafe_allow_html=True
@@ -336,21 +362,6 @@ if st.session_state.page == "home":
 
     st.title("Home - Gestionale schede palestra")
 
-    #col1, col2, col3 = st.columns(3)
-
-    #with col1:
-        #if st.button("Crea scheda cliente", key="btn_crea_scheda", on_click=vai_a, args=("info_cliente",)):
-            #pass
-
-    #with col2:
-        #if st.button("Modifica esercizi", key="btn_mod_esercizi", on_click=vai_a, args=("modifica_modelli",)):
-            #vai_a("modifica_modelli")
-            #pass
-            
-    #with col3:
-        #if st.button("Mod. stile scheda", key="btn_mod_scheda", on_click=vai_a, args=("stile_scheda",)):
-            #vai_a("info_cliente")
-            #pass
 
     with st.container():
         st.button("➕ Crea scheda cliente", key="btn_crea_scheda", use_container_width=True, on_click=vai_a, args=("info_cliente",))
@@ -838,6 +849,7 @@ if st.session_state.page == "modifica_modelli":
     esercizi_correnti = db.get_esercizi(sesso, livello, obiettivo)
 
     st.write(f"Esercizi attuali per {sesso} - {livello} - {obiettivo}:")
+    st.markdown("---")  # 🔹 Aggiunge linea divisoria
     for es in esercizi_correnti:
         immagine = es.get("immagine", "").strip()
         if immagine:
@@ -847,12 +859,29 @@ if st.session_state.page == "modifica_modelli":
             else:
                 st.warning(f"Immagine non trovata: {img_path}")
         st.write(f"**{es['nome']}** - Serie: {es['serie']}")
+        st.markdown("---")  # 🔹 Aggiunge linea divisoria
+
+    # Reset automatico dei campi al rerun se necessario
+    if st.session_state.get("reset_aggiunta", False):
+        st.session_state["nuovo_nome"] = ""
+        st.session_state["nuove_serie"] = ""
+        #st.session_state["nuova_img_file"] = ""
+        st.session_state["reset_aggiunta"] = False
+
+    # Ottieni le immagini già caricate nella cartella IMG_DIR
+    immagini_esistenti = [img for img in os.listdir(IMG_DIR) if img.lower().endswith((".png", ".jpg", ".jpeg", ".gif"))]
+    immagini_esistenti.insert(0, "")  # opzione vuota (nessuna immagine selezionata)
 
     # ======= AGGIUNGI =======
     with st.expander("➕ Aggiungi nuovo esercizio", expanded=st.session_state.get("espandi_aggiunta", False)):
-        nuovo_nome = st.text_input("Nome esercizio")
-        nuove_serie = st.text_input("Serie es: 3x12")
-        nuova_img_file = st.file_uploader("Carica immagine (opzionale)", type=["png", "jpg", "jpeg", "gif"])
+        nuovo_nome = st.text_input("Nome esercizio", key="nuovo_nome")
+        nuove_serie = st.text_input("Serie es: 3x12", key="nuove_serie")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            nuova_img_file = st.file_uploader("📁 Carica immagine (opzionale)", type=["png", "jpg", "jpeg", "gif"], key="nuova_img_file")
+        with col2:
+            immagine_selezionata = st.selectbox("🖼️ Seleziona immagine esistente", immagini_esistenti, key="img_selezionata")
 
         if st.button("Aggiungi esercizio", key="btn_aggiungi_esercizio"):
             if nuovo_nome and nuove_serie:
@@ -864,14 +893,15 @@ if st.session_state.page == "modifica_modelli":
                     salva_path = os.path.join(IMG_DIR, immagine_filename)
                     with open(salva_path, "wb") as f:
                         f.write(nuova_img_file.getbuffer())
+                elif immagine_selezionata:
+                    immagine_filename = immagine_selezionata
 
-                # Salva nel database invece che nel JSON
                 successo = db.aggiungi_esercizio(sesso, livello, obiettivo, nuovo_nome, nuove_serie, immagine_filename)
                 
                 if successo:
-                    # Aggiorna anche la session_state per compatibilità
                     st.session_state.modelli_esercizi = db.get_modelli_esercizi()
                     st.success("Esercizio aggiunto con successo!")
+                    st.session_state["reset_aggiunta"] = True
                     st.rerun()
                 else:
                     st.error("Errore: Esercizio già esistente!")
@@ -889,6 +919,7 @@ if st.session_state.page == "modifica_modelli":
             if esercizio_corrente:
                 nuovo_nome = st.text_input("Nuovo nome", value=esercizio_corrente["nome"])
                 nuove_serie = st.text_input("Nuove serie es: 3x12", value=esercizio_corrente["serie"])
+
                 st.write("Immagine attuale:")
                 if esercizio_corrente.get("immagine"):
                     img_path = os.path.join(IMG_DIR, esercizio_corrente["immagine"])
@@ -896,14 +927,19 @@ if st.session_state.page == "modifica_modelli":
                         st.image(img_path, width=100)
                     else:
                         st.warning(f"Immagine non trovata: {img_path}")
-                nuova_img_file = st.file_uploader("Carica nuova immagine (lascia vuoto per mantenere attuale)", type=["png", "jpg", "jpeg", "gif"])
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    nuova_img_file = st.file_uploader("📁 Carica nuova immagine", type=["png", "jpg", "jpeg", "gif"])
+                with col2:
+                    immagine_selezionata = st.selectbox("🖼️ Oppure seleziona immagine esistente", immagini_esistenti)
 
                 if st.button("Salva modifiche esercizio"):
                     nuova_immagine = esercizio_corrente.get("immagine", "")
 
                     def safe_filename(name):
                         return re.sub(r'[^a-zA-Z0-9_\-]', '_', name)
-                    
+
                     if nuova_img_file is not None:
                         timestamp = int(time.time())
                         ext = os.path.splitext(nuova_img_file.name)[1]
@@ -912,12 +948,10 @@ if st.session_state.page == "modifica_modelli":
                         with open(salva_path, "wb") as f:
                             f.write(nuova_img_file.getbuffer())
                         nuova_immagine = immagine_filename
+                    elif immagine_selezionata:
+                        nuova_immagine = immagine_selezionata
 
-                    # Modifica nel database
-                    db.modifica_esercizio(sesso, livello, obiettivo, esercizio_da_modificare, 
-                                        nuovo_nome, nuove_serie, nuova_immagine)
-                    
-                    # Aggiorna session_state per compatibilità
+                    db.modifica_esercizio(sesso, livello, obiettivo, esercizio_da_modificare, nuovo_nome, nuove_serie, nuova_immagine)
                     st.session_state.modelli_esercizi = db.get_modelli_esercizi()
                     st.success("Esercizio modificato con successo.")
                     st.rerun()
@@ -1059,6 +1093,46 @@ if st.session_state.page == "stile_scheda":
     )
     st.write(f"Hai selezionato il font: {selected_font}")
 
+    ############################################################################
+
+    st.markdown("### Dimensione titoli")
+
+    dimtitoli = st.number_input(
+        "Scegli dimensione titoli (pt)",
+        min_value=6,
+        max_value=48,
+        value=settings.get("dimtitoli", 18),
+        step=1,
+        key="numinput_dimtitoli"
+    )
+    st.write(f"Dimensione titoli: {dimtitoli} pt")
+
+    st.markdown("### Dimensione giorni settimana")
+
+    dimgset = st.number_input(
+        "Scegli dimensione giorni della settimana (pt)",
+        min_value=6,
+        max_value=48,
+        value=settings.get("dimgset", 14),
+        step=1,
+        key="numinput_dimgset"
+    )
+    st.write(f"Dimensione giorni della settimana: {dimgset} pt")
+
+    st.markdown("### Dimensione testi")
+
+    dimtesti = st.number_input(
+        "Scegli dimensione testi (pt)",
+        min_value=6,
+        max_value=48,
+        value=settings.get("dimtesti", 12),
+        step=1,
+        key="numinput_dimtesti"
+    )
+    st.write(f"Dimensione testi: {dimtesti} pt")
+
+##################################################
+
     stili_delimitatore = [
         "Linea semplice",
         "Linea tratteggiata",
@@ -1097,7 +1171,10 @@ if st.session_state.page == "stile_scheda":
             "colore_titoli": colortit,
             "colore_g_settimana": colorgset,
             "font": selected_font,
-            "stile_delimitatore": selezionato
+            "stile_delimitatore": selezionato,
+            "dimtitoli": dimtitoli,
+            "dimgset": dimgset,
+            "dimtesti": dimtesti
         }
         
         # Salva nel database invece che nel file JSON
