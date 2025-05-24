@@ -747,6 +747,23 @@ elif st.session_state.page == "selezione_giorni":
                             except Exception as e:
                                 st.warning(f"Errore nel salvataggio scheda: {e}")
                         
+                        # Genera il PDF (assumendo che la funzione crea_scheda_pdf esista)
+                        try:
+                            filename = crea_scheda_pdf(
+                                st.session_state.nome,
+                                st.session_state.livello,
+                                st.session_state.obiettivo,
+                                esercizi_per_giorno
+                            )
+
+                            with open(filename, "rb") as f:
+                                st.download_button("📄 Scarica PDF", f, file_name=filename, key="btn_carica_pdf")
+                                
+                        except Exception as e:
+                            st.error(f"Errore nella generazione PDF: {e}")
+                        
+        except Exception as e:
+            st.error(f"Errore nel caricamento esercizi: {e}")
 
 # ===============================================================
 # FUNZIONE AGGIUNTIVA: Visualizza schede salvate
