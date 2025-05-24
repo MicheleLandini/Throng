@@ -692,77 +692,61 @@ elif st.session_state.page == "selezione_giorni":
                     esercizi_per_giorno[giorno] = esercizi_scelti
 
                 if st.button("Genera scheda", key="genera_scheda"):
-                    esercizi_finali = []
-                    for giorno in giorni_selezionati:
-                        esercizi_finali.extend(esercizi_per_giorno.get(giorno, []))
+                    with st.spinner("Generazione scheda in corso..."):
+                        esercizi_finali = []
+                        for giorno in giorni_selezionati:
+                            esercizi_finali.extend(esercizi_per_giorno.get(giorno, []))
 
-                    if not esercizi_finali:
-                        st.error("Devi selezionare almeno un esercizio.")
-                    else:
+                        if not esercizi_finali:
+                            st.error("Devi selezionare almeno un esercizio.")
+                        else:
                         # Salva la scheda nel database prima di generare il PDF
-                        try:
-                            conn = sqlite3.connect("throng.db")
-                            cursor = conn.cursor()
+                            try:
+                                conn = sqlite3.connect("throng.db")
+                                cursor = conn.cursor()
                             
                             # Trova l'ID del cliente (assume che sia stato salvato in precedenza)
-                            cursor.execute('''
-                                SELECT id FROM clienti 
-                                WHERE nome = ? AND sesso = ? AND livello = ? AND obiettivo = ?
-                                ORDER BY created_at DESC LIMIT 1
-                            ''', (st.session_state.nome, st.session_state.sesso, 
-                                  st.session_state.livello, st.session_state.obiettivo))
+                                cursor.execute('''
+                                    SELECT id FROM clienti 
+                                    WHERE nome = ? AND sesso = ? AND livello = ? AND obiettivo = ?
+                                    ORDER BY created_at DESC LIMIT 1
+                                ''', (st.session_state.nome, st.session_state.sesso, 
+                                    st.session_state.livello, st.session_state.obiettivo))
                             
-                            cliente_row = cursor.fetchone()
-                            if cliente_row:
-                                cliente_id = cliente_row[0]
+                                cliente_row = cursor.fetchone()
+                                if cliente_row:
+                                    cliente_id = cliente_row[0]
                                 
-                                # Elimina esercizi precedenti per questo cliente
-                                cursor.execute('DELETE FROM schede_esercizi WHERE cliente_id = ?', (cliente_id,))
+                                    # Elimina esercizi precedenti per questo cliente
+                                    cursor.execute('DELETE FROM schede_esercizi WHERE cliente_id = ?', (cliente_id,))
                                 
-                                # Inserisci i nuovi esercizi
-                                for giorno, esercizi_giorno in esercizi_per_giorno.items():
-                                    for ordine, esercizio in enumerate(esercizi_giorno):
-                                        # Trova l'ID dell'esercizio
-                                        cursor.execute('''
-                                            SELECT id FROM esercizi 
-                                            WHERE nome = ? AND sesso = ? AND livello = ? AND obiettivo = ?
-                                        ''', (esercizio['nome'], st.session_state.sesso, 
-                                              st.session_state.livello, st.session_state.obiettivo))
-                                        
-                                        esercizio_row = cursor.fetchone()
-                                        if esercizio_row:
-                                            esercizio_id = esercizio_row[0]
+                                    # Inserisci i nuovi esercizi
+                                    for giorno, esercizi_giorno in esercizi_per_giorno.items():
+                                        for ordine, esercizio in enumerate(esercizi_giorno):
+                                            # Trova l'ID dell'esercizio
                                             cursor.execute('''
-                                                INSERT INTO schede_esercizi 
-                                                (cliente_id, giorno, esercizio_id, ordine)
-                                                VALUES (?, ?, ?, ?)
-                                            ''', (cliente_id, giorno, esercizio_id, ordine))
+                                                SELECT id FROM esercizi 
+                                                WHERE nome = ? AND sesso = ? AND livello = ? AND obiettivo = ?
+                                            ''', (esercizio['nome'], st.session_state.sesso, 
+                                                st.session_state.livello, st.session_state.obiettivo))
+                                        
+                                            esercizio_row = cursor.fetchone()
+                                            if esercizio_row:
+                                                esercizio_id = esercizio_row[0]
+                                                cursor.execute('''
+                                                    INSERT INTO schede_esercizi 
+                                                    (cliente_id, giorno, esercizio_id, ordine)
+                                                    VALUES (?, ?, ?, ?)
+                                                ''', (cliente_id, giorno, esercizio_id, ordine))
                                 
-                                conn.commit()
-                                st.success("Scheda salvata nel database!")
+                                    conn.commit()
+                                    st.success("Scheda salvata nel database!")
                             
-                            conn.close()
+                                conn.close()
                             
-                        except Exception as e:
-                            st.warning(f"Errore nel salvataggio scheda: {e}")
+                            except Exception as e:
+                                st.warning(f"Errore nel salvataggio scheda: {e}")
                         
-                        # Genera il PDF (assumendo che la funzione crea_scheda_pdf esista)
-                        try:
-                            filename = crea_scheda_pdf(
-                                st.session_state.nome,
-                                st.session_state.livello,
-                                st.session_state.obiettivo,
-                                esercizi_per_giorno
-                            )
-
-                            with open(filename, "rb") as f:
-                                st.download_button("📄 Scarica PDF", f, file_name=filename, key="btn_carica_pdf")
-                                
-                        except Exception as e:
-                            st.error(f"Errore nella generazione PDF: {e}")
-                        
-        except Exception as e:
-            st.error(f"Errore nel caricamento esercizi: {e}")
 
 # ===============================================================
 # FUNZIONE AGGIUNTIVA: Visualizza schede salvate
