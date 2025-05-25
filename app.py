@@ -18,6 +18,8 @@ import pandas as pd # lo usato per mostrare le tabelle del db a schermo
 # Importa il nostro DatabaseManager
 from database_helper import DatabaseManager
 import re
+from PAGES import allenamento_assistito
+
 
 # ===============================================================
 # INIZIALIZZAZIONE
@@ -68,6 +70,21 @@ def vai_a(nome_pagina):
     st.session_state.page = nome_pagina
 
 
+# === SIDEBAR ===
+#st.sidebar.title("Navbar")
+if st.sidebar.button("Gestione Schede", use_container_width=True):
+    vai_a("home")
+
+if st.sidebar.button("Allenamento Assistito", use_container_width=True):
+    vai_a("allenamento_assistito")
+
+st.sidebar.markdown("---")  # linea divisoria
+
+# === CONTENUTO CENTRALE ===
+if st.session_state.page == "home":
+    pass
+elif st.session_state.page == "allenamento_assistito":
+    allenamento_assistito.mostra_pagina()
 
 # ===============================================================
 # DEFINISCO LA FUNZIONE PER CREARE IL PDF (MODIFICATA)
