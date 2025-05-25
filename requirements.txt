@@ -3,3 +3,7 @@ reportlab
 Pillow
 pandas
 google-generativeai
+opencv-python
+mediapipe
+numpy
+plotly
