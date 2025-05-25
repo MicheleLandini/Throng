@@ -10,6 +10,8 @@ import tempfile
 from PIL import Image
 import threading
 import logging
+import io
+import base64
 
 # Configurazione logging
 logging.basicConfig(level=logging.INFO)
@@ -155,6 +157,51 @@ class WorkoutProcessor:
             logger.error(f"Error processing image: {e}")
             return image, 0, self.rep_count, self.stage
 
+    def process_video(self, video_path, exercise_type, progress_callback=None):
+        """Processa un video completo e restituisce i frame processati e le statistiche"""
+        cap = cv2.VideoCapture(video_path)
+        processed_frames = []
+        video_stats = []
+        frame_count = 0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30
+        
+        # Reset contatori per il video
+        self.rep_count = 0
+        self.stage = None
+        
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            frame_count += 1
+            timestamp = frame_count / fps
+            
+            # Processa il frame
+            processed_frame, angle, reps, stage = self.process_image(frame, exercise_type)
+            
+            # Salva statistiche per questo frame
+            video_stats.append({
+                'frame': frame_count,
+                'timestamp': timestamp,
+                'angle': angle,
+                'reps': reps,
+                'stage': stage
+            })
+            
+            # Salva ogni N frame per non occupare troppa memoria
+            if frame_count % max(1, total_frames // 100) == 0:  # Massimo 100 frame salvati
+                processed_frames.append(processed_frame)
+            
+            # Aggiorna progress bar se fornita
+            if progress_callback:
+                progress = frame_count / total_frames
+                progress_callback(progress)
+        
+        cap.release()
+        return processed_frames, video_stats
+
 def initialize_session_state():
     """Inizializza lo stato della sessione"""
     defaults = {
@@ -170,7 +217,10 @@ def initialize_session_state():
         'start_time': 0,
         'processor': None,
         'camera_enabled': False,
-        'current_angle': 0
+        'current_angle': 0,
+        'video_processed': False,
+        'video_stats': [],
+        'processed_frames': []
     }
     
     for key, value in defaults.items():
@@ -225,9 +275,139 @@ def create_workout_charts(reps_data):
         logger.error(f"Error creating charts: {e}")
         return None
 
+def create_video_stats_charts(video_stats):
+    """Crea grafici dettagliati per le statistiche del video"""
+    if len(video_stats) < 2:
+        return None
+    
+    try:
+        df = pd.DataFrame(video_stats)
+        
+        fig = make_subplots(
+            rows=3, cols=1,
+            subplot_titles=('Angolo nel tempo', 'Ripetizioni cumulative', 'Velocità movimento'),
+            vertical_spacing=0.1
+        )
+        
+        # Grafico angolo
+        fig.add_trace(
+            go.Scatter(
+                x=df['timestamp'], 
+                y=df['angle'], 
+                mode='lines', 
+                name='Angolo',
+                line=dict(color='blue', width=2)
+            ),
+            row=1, col=1
+        )
+        
+        # Grafico ripetizioni
+        fig.add_trace(
+            go.Scatter(
+                x=df['timestamp'], 
+                y=df['reps'], 
+                mode='lines+markers', 
+                name='Reps',
+                line=dict(color='green', width=2),
+                marker=dict(size=4)
+            ),
+            row=2, col=1
+        )
+        
+        # Calcola velocità di movimento (differenza angolo)
+        df['angle_velocity'] = df['angle'].diff().abs()
+        fig.add_trace(
+            go.Scatter(
+                x=df['timestamp'], 
+                y=df['angle_velocity'], 
+                mode='lines', 
+                name='Velocità',
+                line=dict(color='red', width=1)
+            ),
+            row=3, col=1
+        )
+        
+        fig.update_layout(
+            height=600, 
+            showlegend=False,
+            margin=dict(l=20, r=20, t=60, b=20)
+        )
+        
+        fig.update_xaxes(title_text="Tempo (s)", row=3, col=1)
+        fig.update_yaxes(title_text="Gradi", row=1, col=1)
+        fig.update_yaxes(title_text="Ripetizioni", row=2, col=1)
+        fig.update_yaxes(title_text="Velocità", row=3, col=1)
+        
+        return fig
+        
+    except Exception as e:
+        logger.error(f"Error creating video charts: {e}")
+        return None
+
+def show_webcam_component():
+    """Mostra il componente webcam personalizzato"""
+    webcam_html = """
+    <div style="text-align: center; padding: 20px;">
+        <video id="webcam" width="640" height="480" autoplay playsinline style="border: 2px solid #4CAF50; border-radius: 10px;"></video>
+        <br><br>
+        <button id="startBtn" onclick="startWebcam()" style="background: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; margin: 5px;">
+            📷 Avvia Webcam
+        </button>
+        <button id="stopBtn" onclick="stopWebcam()" style="background: #f44336; color: white; padding: 10px 20px; border: none; border-radius: 5px; margin: 5px;">
+            ⏹️ Ferma Webcam
+        </button>
+        <canvas id="canvas" style="display: none;"></canvas>
+        <div id="status" style="margin-top: 10px; font-weight: bold;"></div>
+    </div>
+    
+    <script>
+    let stream = null;
+    let video = document.getElementById('webcam');
+    let canvas = document.getElementById('canvas');
+    let ctx = canvas.getContext('2d');
+    
+    async function startWebcam() {
+        try {
+            const constraints = {
+                video: {
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    facingMode: 'user'
+                }
+            };
+            
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+            document.getElementById('status').innerHTML = '✅ Webcam attiva';
+            document.getElementById('status').style.color = 'green';
+        } catch (err) {
+            console.error('Errore accesso webcam:', err);
+            document.getElementById('status').innerHTML = '❌ Errore accesso webcam: ' + err.message;
+            document.getElementById('status').style.color = 'red';
+        }
+    }
+    
+    function stopWebcam() {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            video.srcObject = null;
+            document.getElementById('status').innerHTML = '⏹️ Webcam fermata';
+            document.getElementById('status').style.color = 'orange';
+        }
+    }
+    
+    // Auto-start per dispositivi mobili
+    if (/Mobi|Android/i.test(navigator.userAgent)) {
+        document.getElementById('status').innerHTML = '📱 Dispositivo mobile rilevato - Tocca "Avvia Webcam"';
+    }
+    </script>
+    """
+    
+    st.components.v1.html(webcam_html, height=600)
+
 def mostra_pagina():
     st.title("🏋️ Allenamento Assistito con AI")
-    st.markdown("*Carica una foto o video per analizzare i tuoi esercizi*")
+    st.markdown("*Analizza i tuoi esercizi tramite video o webcam*")
     
     # Inizializza stato
     initialize_session_state()
@@ -261,7 +441,7 @@ def mostra_pagina():
     # Metodo di input
     input_method = st.radio(
         "Scegli il metodo di input:",
-        ["📷 Carica Foto", "🎥 Carica Video", "📱 Usa Webcam (limitato)"]
+        ["🎥 Carica Video", "📱 Usa Webcam"]
     )
     
     # Controlli principali
@@ -276,7 +456,7 @@ def mostra_pagina():
     with col4:
         save_workout = st.button(
             "💾 Salva", 
-            disabled=len(st.session_state.reps_data) == 0
+            disabled=len(st.session_state.reps_data) == 0 and len(st.session_state.video_stats) == 0
         )
     
     # Gestione controlli
@@ -286,10 +466,12 @@ def mostra_pagina():
             st.session_state.rep_count = 0
             st.session_state.series_count = 0
             st.session_state.reps_data = []
+            st.session_state.video_stats = []
             st.session_state.total_pause_time = 0
             st.session_state.start_time = time.time()
             st.session_state.processor.rep_count = 0
             st.session_state.processor.stage = None
+            st.session_state.video_processed = False
         else:
             st.session_state.workout_started = True
             st.session_state.workout_paused = False
@@ -304,16 +486,19 @@ def mostra_pagina():
         st.session_state.rep_count = 0
         st.session_state.series_count = 0
         st.session_state.reps_data = []
+        st.session_state.video_stats = []
         st.session_state.workout_started = False
         st.session_state.workout_paused = False
         st.session_state.total_pause_time = 0
         st.session_state.current_angle = 0
+        st.session_state.video_processed = False
         if st.session_state.processor:
             st.session_state.processor.rep_count = 0
             st.session_state.processor.stage = None
             st.session_state.processor.current_angle = 0
     
-    if save_workout and len(st.session_state.reps_data) > 0:
+    if save_workout and (len(st.session_state.reps_data) > 0 or len(st.session_state.video_stats) > 0):
+        data_to_save = st.session_state.video_stats if len(st.session_state.video_stats) > 0 else st.session_state.reps_data
         workout_data = {
             'timestamp': time.strftime("%Y-%m-%d %H:%M:%S"),
             'name': workout_name,
@@ -321,160 +506,137 @@ def mostra_pagina():
             'target_reps': target_reps,
             'target_series': target_series,
             'completed_series': st.session_state.series_count,
-            'total_reps': st.session_state.reps_data[-1]['reps'] if st.session_state.reps_data else 0,
-            'data': st.session_state.reps_data.copy(),
-            'duration': st.session_state.reps_data[-1]['timestamp'] if st.session_state.reps_data else 0
+            'total_reps': data_to_save[-1]['reps'] if data_to_save else 0,
+            'data': data_to_save.copy(),
+            'duration': data_to_save[-1]['timestamp'] if data_to_save else 0
         }
         st.session_state.saved_workouts.append(workout_data)
         st.success(f"✅ Allenamento '{workout_name}' salvato!")
     
     # Layout principale
-    input_col, stats_col = st.columns([2, 1])
-    
-    with input_col:
-        if input_method == "📷 Carica Foto":
-            st.subheader("📷 Analisi Foto")
-            uploaded_file = st.file_uploader(
-                "Carica una foto del tuo esercizio", 
-                type=['jpg', 'jpeg', 'png']
-            )
-            
-            if uploaded_file is not None:
-                # Converti uploaded file in immagine
-                image = Image.open(uploaded_file)
-                image_np = np.array(image)
-                
-                if st.session_state.workout_started:
-                    # Processa l'immagine
-                    processed_image, angle, reps, stage = st.session_state.processor.process_image(
-                        image_np, exercise_type
-                    )
-                    
-                    # Aggiorna dati
-                    if reps != st.session_state.rep_count:
-                        st.session_state.rep_count = reps
-                        st.session_state.current_angle = angle
-                        
-                        adjusted_timestamp = time.time() - st.session_state.start_time - st.session_state.total_pause_time
-                        st.session_state.reps_data.append({
-                            "timestamp": adjusted_timestamp,
-                            "angle": angle,
-                            "reps": reps
-                        })
-                        
-                        if reps >= target_reps:
-                            st.session_state.series_count += 1
-                            st.session_state.processor.rep_count = 0
-                            st.session_state.rep_count = 0
-                            
-                            if st.session_state.series_count >= target_series:
-                                st.session_state.workout_started = False
-                                st.success("🎉 Allenamento completato!")
-                    
-                    st.image(processed_image, caption="Analisi Postura", use_column_width=True)
-                else:
-                    st.image(image, caption="Foto caricata", use_column_width=True)
-                    st.info("Premi 'Inizia' per avviare l'analisi")
+    if input_method == "🎥 Carica Video":
+        st.subheader("🎥 Analisi Video")
+        uploaded_video = st.file_uploader(
+            "Carica un video del tuo allenamento", 
+            type=['mp4', 'avi', 'mov', 'wmv']
+        )
         
-        elif input_method == "🎥 Carica Video":
-            st.subheader("🎥 Analisi Video")
-            uploaded_video = st.file_uploader(
-                "Carica un video del tuo allenamento", 
-                type=['mp4', 'avi', 'mov']
-            )
+        if uploaded_video is not None:
+            # Salva temporaneamente il video
+            tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+            tfile.write(uploaded_video.read())
             
-            if uploaded_video is not None:
-                # Salva temporaneamente il video
-                tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
-                tfile.write(uploaded_video.read())
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                # Mostra video originale
+                st.video(uploaded_video)
                 
-                if st.session_state.workout_started:
+                if st.session_state.workout_started and not st.session_state.video_processed:
                     st.info("🎬 Elaborazione video in corso...")
                     
-                    cap = cv2.VideoCapture(tfile.name)
-                    frame_count = 0
+                    # Barra di progresso
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
                     
-                    while cap.isOpened():
-                        ret, frame = cap.read()
-                        if not ret:
-                            break
+                    def update_progress(progress):
+                        progress_bar.progress(progress)
+                        status_text.text(f"Elaborazione: {progress*100:.1f}%")
+                    
+                    # Processa il video
+                    processed_frames, video_stats = st.session_state.processor.process_video(
+                        tfile.name, exercise_type, update_progress
+                    )
+                    
+                    st.session_state.video_stats = video_stats
+                    st.session_state.processed_frames = processed_frames
+                    st.session_state.video_processed = True
+                    
+                    progress_bar.progress(1.0)
+                    status_text.text("✅ Elaborazione completata!")
+                    
+                    # Calcola statistiche finali
+                    if video_stats:
+                        final_reps = video_stats[-1]['reps']
+                        st.session_state.rep_count = final_reps
+                        st.session_state.series_count = final_reps // target_reps
                         
-                        frame_count += 1
-                        if frame_count % 30 == 0:  # Analizza ogni 30 frame
-                            processed_frame, angle, reps, stage = st.session_state.processor.process_image(
-                                frame, exercise_type
-                            )
-                            
-                            if reps != st.session_state.rep_count:
-                                st.session_state.rep_count = reps
-                                st.session_state.current_angle = angle
-                                
-                                adjusted_timestamp = frame_count / 30.0  # Assume 30 FPS
-                                st.session_state.reps_data.append({
-                                    "timestamp": adjusted_timestamp,
-                                    "angle": angle,
-                                    "reps": reps
-                                })
+                        st.success(f"🎉 Video analizzato! Ripetizioni rilevate: {final_reps}")
+            
+            with col2:
+                st.subheader("📊 Statistiche Video")
+                
+                if st.session_state.video_processed and st.session_state.video_stats:
+                    stats = st.session_state.video_stats
+                    final_stats = stats[-1]
                     
-                    cap.release()
-                    st.success("✅ Video elaborato!")
+                    # Metriche principali
+                    st.metric("Ripetizioni totali", final_stats['reps'])
+                    st.metric("Serie stimate", final_stats['reps'] // target_reps)
+                    st.metric("Durata video", f"{final_stats['timestamp']:.1f}s")
+                    
+                    # Statistiche dettagliate
+                    angles = [s['angle'] for s in stats if s['angle'] > 0]
+                    if angles:
+                        st.metric("Angolo medio", f"{np.mean(angles):.1f}°")
+                        st.metric("Angolo min/max", f"{min(angles):.0f}°/{max(angles):.0f}°")
+                    
+                    # Tempo medio per ripetizione
+                    if final_stats['reps'] > 0:
+                        avg_time_per_rep = final_stats['timestamp'] / final_stats['reps']
+                        st.metric("Tempo/ripetizione", f"{avg_time_per_rep:.1f}s")
                 else:
-                    st.video(uploaded_video)
-                    st.info("Premi 'Inizia' per avviare l'analisi del video")
-        
-        else:  # Webcam
-            st.subheader("📱 Webcam")
-            st.warning("""
-            ⚠️ **Limitazioni Webcam su Streamlit Cloud:**
-            - La webcam live non è completamente supportata su Streamlit Cloud
-            - Usa il caricamento di foto/video per risultati migliori
-            - Per webcam live, considera di eseguire l'app localmente
-            """)
+                    st.info("Premi 'Inizia' per analizzare il video")
             
-            enable_camera = st.checkbox("Prova ad attivare la webcam (può non funzionare)")
-            
-            if enable_camera:
-                st.info("📱 Su alcuni browser/dispositivi la webcam potrebbe non funzionare correttamente")
+            # Grafici dettagliati del video
+            if st.session_state.video_processed and st.session_state.video_stats:
+                st.subheader("📈 Analisi Dettagliata Movimento")
+                
+                fig = create_video_stats_charts(st.session_state.video_stats)
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                # Tabella con dati grezzi (sample)
+                with st.expander("📋 Dati Dettagliati (Prime 20 righe)"):
+                    df_sample = pd.DataFrame(st.session_state.video_stats[:20])
+                    st.dataframe(df_sample)
     
-    with stats_col:
-        st.subheader("📊 Statistiche Live")
+    else:  # Webcam
+        st.subheader("📱 Webcam Live")
+        st.info("💡 **Funziona su PC e Mobile:** La webcam si adatta automaticamente al tuo dispositivo")
         
-        # Statistiche in tempo reale
-        current_reps = st.session_state.processor.rep_count
-        current_stage = st.session_state.processor.stage
-        current_angle = st.session_state.processor.current_angle
+        # Mostra componente webcam
+        show_webcam_component()
         
-        # Mostra metriche
-        st.metric("Ripetizioni correnti", current_reps, f"Target: {target_reps}")
-        st.metric("Serie completate", st.session_state.series_count, f"Target: {target_series}")
-        st.metric("Esercizio", exercise_type)
+        # Statistiche live per webcam
+        col1, col2 = st.columns(2)
         
-        if current_stage:
-            st.write(f"**Fase:** {current_stage}")
-        if current_angle > 0:
-            st.write(f"**Angolo:** {int(current_angle)}°")
+        with col1:
+            st.subheader("📊 Statistiche Live")
+            current_reps = st.session_state.processor.rep_count
+            current_stage = st.session_state.processor.stage
+            current_angle = st.session_state.processor.current_angle
             
+            st.metric("Ripetizioni correnti", current_reps, f"Target: {target_reps}")
+            st.metric("Serie completate", st.session_state.series_count, f"Target: {target_series}")
+            
+            if current_stage:
+                st.write(f"**Fase:** {current_stage}")
+            if current_angle > 0:
+                st.write(f"**Angolo:** {int(current_angle)}°")
+        
+        with col2:
+            st.subheader("📈 Grafico Live")
+            if len(st.session_state.reps_data) > 1:
+                fig = create_workout_charts(st.session_state.reps_data)
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
+        
+        # Stato allenamento
         if st.session_state.workout_paused:
             st.warning("⏸️ Allenamento in pausa")
         elif st.session_state.workout_started:
             st.success("🏃 Allenamento attivo")
-    
-    # Grafici
-    chart_col1, chart_col2 = st.columns(2)
-    
-    with chart_col1:
-        st.subheader("📈 Grafico Movimento")
-        if len(st.session_state.reps_data) > 1:
-            fig = create_workout_charts(st.session_state.reps_data)
-            if fig:
-                st.plotly_chart(fig, use_container_width=True)
-    
-    with chart_col2:
-        st.subheader("📋 Progresso Serie")
-        if target_series > 0:
-            progress = (st.session_state.series_count / target_series) * 100
-            st.progress(min(progress / 100, 1.0))
-            st.write(f"Progresso: {min(progress, 100):.1f}%")
     
     # Sezione allenamenti salvati
     if len(st.session_state.saved_workouts) > 0:
@@ -507,7 +669,11 @@ def mostra_pagina():
             
             # Grafico dettagliato
             if len(workout['data']) > 0:
-                fig_detailed = create_workout_charts(workout['data'])
+                if 'frame' in workout['data'][0]:  # Video data
+                    fig_detailed = create_video_stats_charts(workout['data'])
+                else:  # Live data
+                    fig_detailed = create_workout_charts(workout['data'])
+                
                 if fig_detailed:
                     st.plotly_chart(fig_detailed, use_container_width=True)
 
