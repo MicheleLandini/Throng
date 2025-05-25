@@ -5,7 +5,8 @@ Pillow
 pandas
 google-generativeai
 opencv-python
-mediapipe
-numpy
 plotly
 streamlit-webrtc
+opencv-python-headless==4.8.1.78
+mediapipe==0.10.7
+numpy<2.0.0
