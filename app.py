@@ -367,6 +367,7 @@ if st.session_state.page == "home":
         st.button("➕ Crea scheda cliente", key="btn_crea_scheda", use_container_width=True, on_click=vai_a, args=("info_cliente",))
         st.button("✏️ Modifica esercizi", key="btn_mod_esercizi", use_container_width=True, on_click=vai_a, args=("modifica_modelli",))
         st.button("🎨 Mod. stile scheda", key="btn_mod_scheda", use_container_width=True, on_click=vai_a, args=("stile_scheda",))
+        #st.button("🏋️‍♂️ Allenamento Assistito", key="btn_allenamento", use_container_width=True, on_click=vai_a, args=("allenamento_assistito",))
 
 # ===============================================================
 # PAGINA: Gestione PDF esistenti
