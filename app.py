@@ -432,6 +432,15 @@ if st.session_state.page == "home":
 # ===============================================================
 # PAGINA: IA
 # ===============================================================
+    # Aggiungi i bottoni di navigazione nella sidebar prima della configurazione API
+st.sidebar.title("Navigazione")
+
+if st.sidebar.button("Gestione Schede"):
+    vai_a("home")  # Imposta la pagina 'home'
+
+if st.sidebar.button("Allenamento Assistito"):
+    vai_a("allenamento_assistito")  # Imposta la pagina 'allenamento_assistito'
+    
     #--- UI per l'inserimento della Chiave API ---
     st.sidebar.title("Configurazione API")
     api_key_input = st.sidebar.text_input(
