@@ -6,9 +6,8 @@ import time
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import math
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
-import av
+import tempfile
+from PIL import Image
 import threading
 import logging
 
@@ -16,26 +15,17 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configurazione WebRTC
-RTC_CONFIGURATION = RTCConfiguration({
-    "iceServers": [
-        {"urls": ["stun:stun.l.google.com:19302"]},
-        {"urls": ["stun:stun1.l.google.com:19302"]},
-    ]
-})
-
 class WorkoutProcessor:
     def __init__(self):
         self.mp_pose = mp.solutions.pose
         self.pose = self.mp_pose.Pose(
             min_detection_confidence=0.5, 
             min_tracking_confidence=0.5,
-            model_complexity=1  # Ridotto per mobile
+            model_complexity=1
         )
         self.mp_drawing = mp.solutions.drawing_utils
         
-        # Thread-safe variables
-        self.lock = threading.Lock()
+        # Variables per tracking
         self.current_angle = 0
         self.rep_count = 0
         self.stage = None
@@ -61,14 +51,13 @@ class WorkoutProcessor:
             
     def detect_reps(self, angle, threshold_down=70, threshold_up=160):
         """Rileva le ripetizioni basandosi sull'angolo"""
-        with self.lock:
-            if angle > threshold_up and self.stage != "up":
-                self.stage = "up"
-            elif angle < threshold_down and self.stage == "up":
-                self.stage = "down"
-                self.rep_count += 1
-                
-            return self.rep_count, self.stage
+        if angle > threshold_up and self.stage != "up":
+            self.stage = "up"
+        elif angle < threshold_down and self.stage == "up":
+            self.stage = "down"
+            self.rep_count += 1
+            
+        return self.rep_count, self.stage
     
     def get_landmarks_for_exercise(self, landmarks, exercise_type):
         """Estrae i landmark appropriati per ogni esercizio"""
@@ -113,17 +102,17 @@ class WorkoutProcessor:
             logger.error(f"Error extracting landmarks: {e}")
             return None, None, None
     
-    def process_frame(self, frame, exercise_type, workout_active):
-        """Processa un singolo frame"""
-        if not workout_active:
-            return frame
-            
+    def process_image(self, image, exercise_type):
+        """Processa una singola immagine"""
         try:
-            # Converti BGR a RGB
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # Converti BGR a RGB se necessario
+            if len(image.shape) == 3 and image.shape[2] == 3:
+                rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            else:
+                rgb_image = image
             
             # Processa con MediaPipe
-            results = self.pose.process(rgb_frame)
+            results = self.pose.process(rgb_image)
             
             if results.pose_landmarks:
                 landmarks = results.pose_landmarks.landmark
@@ -140,8 +129,9 @@ class WorkoutProcessor:
                     reps, stage = self.detect_reps(angle)
                     
                     # Disegna skeleton
+                    annotated_image = rgb_image.copy()
                     self.mp_drawing.draw_landmarks(
-                        rgb_frame, 
+                        annotated_image, 
                         results.pose_landmarks, 
                         self.mp_pose.POSE_CONNECTIONS,
                         self.mp_drawing.DrawingSpec(color=(245,117,66), thickness=2, circle_radius=2),
@@ -149,21 +139,21 @@ class WorkoutProcessor:
                     )
                     
                     # Aggiungi testo overlay
-                    cv2.putText(rgb_frame, f'Reps: {reps}', (15, 30), 
+                    h, w, _ = annotated_image.shape
+                    cv2.putText(annotated_image, f'Reps: {reps}', (15, 30), 
                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                    cv2.putText(rgb_frame, f'Stage: {stage if stage else "N/A"}', (15, 70), 
+                    cv2.putText(annotated_image, f'Stage: {stage if stage else "N/A"}', (15, 70), 
                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                    cv2.putText(rgb_frame, f'Angle: {int(angle)}°', (15, 110), 
+                    cv2.putText(annotated_image, f'Angle: {int(angle)}°', (15, 110), 
                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
                     
-                    self.last_update = time.time()
+                    return annotated_image, angle, reps, stage
             
-            # Converti di nuovo a BGR per output
-            return cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
+            return rgb_image, 0, self.rep_count, self.stage
             
         except Exception as e:
-            logger.error(f"Error processing frame: {e}")
-            return frame
+            logger.error(f"Error processing image: {e}")
+            return image, 0, self.rep_count, self.stage
 
 def initialize_session_state():
     """Inizializza lo stato della sessione"""
@@ -173,13 +163,14 @@ def initialize_session_state():
         'stage': None,
         'reps_data': [],
         'workout_started': False,
-        'countdown_started': False,
         'workout_paused': False,
         'saved_workouts': [],
         'pause_time': 0,
         'total_pause_time': 0,
         'start_time': 0,
-        'processor': None
+        'processor': None,
+        'camera_enabled': False,
+        'current_angle': 0
     }
     
     for key, value in defaults.items():
@@ -234,18 +225,16 @@ def create_workout_charts(reps_data):
         logger.error(f"Error creating charts: {e}")
         return None
 
-def video_frame_callback(frame, exercise_type, workout_active, processor):
-    """Callback per processare i frame video"""
-    img = frame.to_ndarray(format="bgr24")
+def main():
+    st.set_page_config(
+        page_title="Allenamento Assistito",
+        page_icon="🏋️",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
     
-    if processor:
-        img = processor.process_frame(img, exercise_type, workout_active)
-    
-    return av.VideoFrame.from_ndarray(img, format="bgr24")
-
-def mostra_pagina():
-    st.title("🏋️ Allenamento Assistito Avanzato")
-    st.markdown("*Compatibile con dispositivi mobili tramite WebRTC*")
+    st.title("🏋️ Allenamento Assistito con AI")
+    st.markdown("*Carica una foto o video per analizzare i tuoi esercizi*")
     
     # Inizializza stato
     initialize_session_state()
@@ -265,10 +254,6 @@ def mostra_pagina():
         "Numero di serie", 
         min_value=1, max_value=20, value=3
     )
-    countdown_time = st.sidebar.number_input(
-        "Countdown iniziale (secondi)", 
-        min_value=3, max_value=10, value=5
-    )
     
     exercise_type = st.sidebar.selectbox(
         "Tipo di esercizio",
@@ -278,6 +263,12 @@ def mostra_pagina():
     workout_name = st.sidebar.text_input(
         "Nome allenamento", 
         value="Sessione " + time.strftime("%Y-%m-%d")
+    )
+    
+    # Metodo di input
+    input_method = st.radio(
+        "Scegli il metodo di input:",
+        ["📷 Carica Foto", "🎥 Carica Video", "📱 Usa Webcam (limitato)"]
     )
     
     # Controlli principali
@@ -298,9 +289,7 @@ def mostra_pagina():
     # Gestione controlli
     if start_workout:
         if not st.session_state.workout_paused:
-            # Nuovo allenamento
-            st.session_state.countdown_started = True
-            st.session_state.workout_started = False
+            st.session_state.workout_started = True
             st.session_state.rep_count = 0
             st.session_state.series_count = 0
             st.session_state.reps_data = []
@@ -309,7 +298,6 @@ def mostra_pagina():
             st.session_state.processor.rep_count = 0
             st.session_state.processor.stage = None
         else:
-            # Riprendi allenamento
             st.session_state.workout_started = True
             st.session_state.workout_paused = False
             st.session_state.total_pause_time += time.time() - st.session_state.pause_time
@@ -324,12 +312,13 @@ def mostra_pagina():
         st.session_state.series_count = 0
         st.session_state.reps_data = []
         st.session_state.workout_started = False
-        st.session_state.countdown_started = False
         st.session_state.workout_paused = False
         st.session_state.total_pause_time = 0
+        st.session_state.current_angle = 0
         if st.session_state.processor:
             st.session_state.processor.rep_count = 0
             st.session_state.processor.stage = None
+            st.session_state.processor.current_angle = 0
     
     if save_workout and len(st.session_state.reps_data) > 0:
         workout_data = {
@@ -347,91 +336,135 @@ def mostra_pagina():
         st.success(f"✅ Allenamento '{workout_name}' salvato!")
     
     # Layout principale
-    video_col, stats_col = st.columns([2, 1])
+    input_col, stats_col = st.columns([2, 1])
     
-    with video_col:
-        st.subheader("📹 Video Feed")
+    with input_col:
+        if input_method == "📷 Carica Foto":
+            st.subheader("📷 Analisi Foto")
+            uploaded_file = st.file_uploader(
+                "Carica una foto del tuo esercizio", 
+                type=['jpg', 'jpeg', 'png']
+            )
+            
+            if uploaded_file is not None:
+                # Converti uploaded file in immagine
+                image = Image.open(uploaded_file)
+                image_np = np.array(image)
+                
+                if st.session_state.workout_started:
+                    # Processa l'immagine
+                    processed_image, angle, reps, stage = st.session_state.processor.process_image(
+                        image_np, exercise_type
+                    )
+                    
+                    # Aggiorna dati
+                    if reps != st.session_state.rep_count:
+                        st.session_state.rep_count = reps
+                        st.session_state.current_angle = angle
+                        
+                        adjusted_timestamp = time.time() - st.session_state.start_time - st.session_state.total_pause_time
+                        st.session_state.reps_data.append({
+                            "timestamp": adjusted_timestamp,
+                            "angle": angle,
+                            "reps": reps
+                        })
+                        
+                        if reps >= target_reps:
+                            st.session_state.series_count += 1
+                            st.session_state.processor.rep_count = 0
+                            st.session_state.rep_count = 0
+                            
+                            if st.session_state.series_count >= target_series:
+                                st.session_state.workout_started = False
+                                st.success("🎉 Allenamento completato!")
+                    
+                    st.image(processed_image, caption="Analisi Postura", use_column_width=True)
+                else:
+                    st.image(image, caption="Foto caricata", use_column_width=True)
+                    st.info("Premi 'Inizia' per avviare l'analisi")
         
-        # WebRTC Streamer
-        ctx = webrtc_streamer(
-            key="workout-stream",
-            mode=WebRtcMode.SENDRECV,
-            rtc_configuration=RTC_CONFIGURATION,
-            video_frame_callback=lambda frame: video_frame_callback(
-                frame, 
-                exercise_type, 
-                st.session_state.workout_started,
-                st.session_state.processor
-            ),
-            media_stream_constraints={
-                "video": {
-                    "width": {"min": 640, "ideal": 1280, "max": 1920},
-                    "height": {"min": 480, "ideal": 720, "max": 1080},
-                    "frameRate": {"min": 15, "ideal": 30, "max": 60}
-                },
-                "audio": False
-            },
-            async_processing=True,
-        )
+        elif input_method == "🎥 Carica Video":
+            st.subheader("🎥 Analisi Video")
+            uploaded_video = st.file_uploader(
+                "Carica un video del tuo allenamento", 
+                type=['mp4', 'avi', 'mov']
+            )
+            
+            if uploaded_video is not None:
+                # Salva temporaneamente il video
+                tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+                tfile.write(uploaded_video.read())
+                
+                if st.session_state.workout_started:
+                    st.info("🎬 Elaborazione video in corso...")
+                    
+                    cap = cv2.VideoCapture(tfile.name)
+                    frame_count = 0
+                    
+                    while cap.isOpened():
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+                        
+                        frame_count += 1
+                        if frame_count % 30 == 0:  # Analizza ogni 30 frame
+                            processed_frame, angle, reps, stage = st.session_state.processor.process_image(
+                                frame, exercise_type
+                            )
+                            
+                            if reps != st.session_state.rep_count:
+                                st.session_state.rep_count = reps
+                                st.session_state.current_angle = angle
+                                
+                                adjusted_timestamp = frame_count / 30.0  # Assume 30 FPS
+                                st.session_state.reps_data.append({
+                                    "timestamp": adjusted_timestamp,
+                                    "angle": angle,
+                                    "reps": reps
+                                })
+                    
+                    cap.release()
+                    st.success("✅ Video elaborato!")
+                else:
+                    st.video(uploaded_video)
+                    st.info("Premi 'Inizia' per avviare l'analisi del video")
         
-        # Informazioni per dispositivi mobili
-        st.info("📱 Su mobile: tocca 'START' per attivare la fotocamera")
+        else:  # Webcam
+            st.subheader("📱 Webcam")
+            st.warning("""
+            ⚠️ **Limitazioni Webcam su Streamlit Cloud:**
+            - La webcam live non è completamente supportata su Streamlit Cloud
+            - Usa il caricamento di foto/video per risultati migliori
+            - Per webcam live, considera di eseguire l'app localmente
+            """)
+            
+            enable_camera = st.checkbox("Prova ad attivare la webcam (può non funzionare)")
+            
+            if enable_camera:
+                st.info("📱 Su alcuni browser/dispositivi la webcam potrebbe non funzionare correttamente")
     
     with stats_col:
         st.subheader("📊 Statistiche Live")
         
-        # Countdown
-        if st.session_state.countdown_started and not st.session_state.workout_started:
-            elapsed = time.time() - st.session_state.start_time
-            remaining = countdown_time - elapsed
-            
-            if remaining > 0:
-                st.markdown(f"### ⏰ Inizia tra: {int(remaining) + 1} secondi")
-            else:
-                st.session_state.countdown_started = False
-                st.session_state.workout_started = True
-                st.session_state.start_time = time.time()
-        
         # Statistiche in tempo reale
-        if st.session_state.processor:
-            current_reps = st.session_state.processor.rep_count
-            current_stage = st.session_state.processor.stage
-            current_angle = st.session_state.processor.current_angle
+        current_reps = st.session_state.processor.rep_count
+        current_stage = st.session_state.processor.stage
+        current_angle = st.session_state.processor.current_angle
+        
+        # Mostra metriche
+        st.metric("Ripetizioni correnti", current_reps, f"Target: {target_reps}")
+        st.metric("Serie completate", st.session_state.series_count, f"Target: {target_series}")
+        st.metric("Esercizio", exercise_type)
+        
+        if current_stage:
+            st.write(f"**Fase:** {current_stage}")
+        if current_angle > 0:
+            st.write(f"**Angolo:** {int(current_angle)}°")
             
-            # Aggiorna dati se necessario
-            if st.session_state.workout_started and current_reps != st.session_state.rep_count:
-                st.session_state.rep_count = current_reps
-                
-                # Aggiungi ai dati
-                adjusted_timestamp = time.time() - st.session_state.start_time - st.session_state.total_pause_time
-                st.session_state.reps_data.append({
-                    "timestamp": adjusted_timestamp,
-                    "angle": current_angle,
-                    "reps": current_reps
-                })
-                
-                # Controlla serie completate
-                if current_reps >= target_reps:
-                    st.session_state.series_count += 1
-                    st.session_state.processor.rep_count = 0
-                    st.session_state.rep_count = 0
-                    
-                    if st.session_state.series_count >= target_series:
-                        st.session_state.workout_started = False
-                        st.success("🎉 Allenamento completato!")
-            
-            # Mostra metriche
-            st.metric("Ripetizioni correnti", current_reps, f"Target: {target_reps}")
-            st.metric("Serie completate", st.session_state.series_count, f"Target: {target_series}")
-            st.metric("Esercizio", exercise_type)
-            
-            if current_stage:
-                st.write(f"**Fase:** {current_stage}")
-            if current_angle > 0:
-                st.write(f"**Angolo:** {int(current_angle)}°")
-                
         if st.session_state.workout_paused:
             st.warning("⏸️ Allenamento in pausa")
+        elif st.session_state.workout_started:
+            st.success("🏃 Allenamento attivo")
     
     # Grafici
     chart_col1, chart_col2 = st.columns(2)
@@ -486,11 +519,4 @@ def mostra_pagina():
                     st.plotly_chart(fig_detailed, use_container_width=True)
 
 if __name__ == "__main__":
-    # Solo se eseguito direttamente
-    st.set_page_config(
-        page_title="Allenamento Assistito",
-        page_icon="🏋️",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-    mostra_pagina()
+    main()
