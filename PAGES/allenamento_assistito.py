@@ -225,14 +225,7 @@ def create_workout_charts(reps_data):
         logger.error(f"Error creating charts: {e}")
         return None
 
-def main():
-    st.set_page_config(
-        page_title="Allenamento Assistito",
-        page_icon="🏋️",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-    
+def mostra_pagina():
     st.title("🏋️ Allenamento Assistito con AI")
     st.markdown("*Carica una foto o video per analizzare i tuoi esercizi*")
     
@@ -517,6 +510,15 @@ def main():
                 fig_detailed = create_workout_charts(workout['data'])
                 if fig_detailed:
                     st.plotly_chart(fig_detailed, use_container_width=True)
+
+def main():
+    st.set_page_config(
+        page_title="Allenamento Assistito",
+        page_icon="🏋️",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    mostra_pagina()
 
 if __name__ == "__main__":
     main()
