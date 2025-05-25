@@ -244,13 +244,6 @@ def video_frame_callback(frame, exercise_type, workout_active, processor):
     return av.VideoFrame.from_ndarray(img, format="bgr24")
 
 def mostra_pagina():
-    st.set_page_config(
-        page_title="Allenamento Assistito",
-        page_icon="🏋️",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-    
     st.title("🏋️ Allenamento Assistito Avanzato")
     st.markdown("*Compatibile con dispositivi mobili tramite WebRTC*")
     
@@ -493,4 +486,11 @@ def mostra_pagina():
                     st.plotly_chart(fig_detailed, use_container_width=True)
 
 if __name__ == "__main__":
+    # Solo se eseguito direttamente
+    st.set_page_config(
+        page_title="Allenamento Assistito",
+        page_icon="🏋️",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
     mostra_pagina()
