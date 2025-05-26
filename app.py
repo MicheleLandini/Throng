@@ -449,11 +449,11 @@ if st.session_state.page == "home":
 # ===============================================================
 # PAGINA: IA
 # ===============================================================
-    #--- UI per l'inserimento della Chiave API ---
+    #--- UI per l'inserimento della Chiave API --
 
     def configure_gemini_api():
         """Configura l'API Gemini usando Streamlit Secrets o input utente"""
-
+    
         model = None
         api_configured = False  # <-- inizializzata sempre prima
         
@@ -488,11 +488,11 @@ if st.session_state.page == "home":
         else:
             st.sidebar.warning("⚠️ Inserisci la tua Chiave API di Google Gemini per iniziare la chat.")
             return None, False
-
-# ===============================================================
-# FUNZIONE MIGLIORATA PER GENERARE RISPOSTE
-# ===============================================================
-
+    
+    # ===============================================================
+    # FUNZIONE MIGLIORATA PER GENERARE RISPOSTE
+    # ===============================================================
+    
     # === Funzione per interagire con Google Gemini ===
     def generate_reply_gemini(messages, current_model):
         try:
@@ -509,7 +509,7 @@ if st.session_state.page == "home":
                     formatted_messages.append({'role':'user', 'parts': [msg["content"]]})
                 elif msg["role"] == "assistant":
                     formatted_messages.append({'role':'model', 'parts': [msg["content"]]})
-
+    
             chat = current_model.start_chat(history=formatted_messages)
             
             if formatted_messages:
@@ -524,8 +524,11 @@ if st.session_state.page == "home":
                 
         except Exception as e:
             return f"Errore API Gemini: {str(e)}"
-
-
+    
+    # === CONFIGURAZIONE API E INIZIALIZZAZIONE ===
+    # Configura l'API e ottieni il modello
+    model, api_configured = configure_gemini_api()
+    
     # --- Inizializza la memoria della chat ---
     if "messages" not in st.session_state:
         st.session_state.messages = [
@@ -538,9 +541,9 @@ if st.session_state.page == "home":
                 )
             }
         ]
-
+    
     # === UI Chat ===
-
+    
     with st.expander("💬 Chat con il Personal Trainer IA", expanded=False):
         # Mostra la conversazione storica
         for msg in st.session_state.messages:
@@ -549,7 +552,7 @@ if st.session_state.page == "home":
             elif msg["role"] == "assistant":
                 st.markdown(f"**Personal Trainer IA:** {msg['content']}")
             # Il messaggio di sistema non viene mostrato direttamente nella chat
-
+    
         # --- Nuovo approccio con st.form ---
         # Creiamo un form per gestire l'invio dell'input dell'utente
         with st.form(key='chat_form', clear_on_submit=True):
@@ -559,7 +562,7 @@ if st.session_state.page == "home":
                 disabled=not api_configured
             )
             submit_button = st.form_submit_button(label='Invia', disabled=not api_configured)
-
+    
             if submit_button and user_input and api_configured:
                 # Aggiungi il messaggio dell'utente alla session_state
                 st.session_state.messages.append({"role": "user", "content": user_input})
@@ -572,7 +575,6 @@ if st.session_state.page == "home":
                 
                 # Ricarica l'applicazione per mostrare i nuovi messaggi
                 st.rerun() # Ancora necessario per aggiornare la visualizzazione della chat
-
 
 
 # ===============================================================
