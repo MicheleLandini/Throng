@@ -453,6 +453,9 @@ if st.session_state.page == "home":
 
     def configure_gemini_api():
         """Configura l'API Gemini usando Streamlit Secrets o input utente"""
+
+        model = None
+        api_configured = False  # <-- inizializzata sempre prima
         
         # Prova prima con Streamlit Secrets (per deployment sicuro)
         try:
