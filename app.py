@@ -489,6 +489,7 @@ if st.session_state.page == "home":
 # ===============================================================
 # FUNZIONE MIGLIORATA PER GENERARE RISPOSTE
 # ===============================================================
+
     # === Funzione per interagire con Google Gemini ===
     def generate_reply_gemini(messages, current_model):
         try:
@@ -568,7 +569,6 @@ if st.session_state.page == "home":
                 
                 # Ricarica l'applicazione per mostrare i nuovi messaggi
                 st.rerun() # Ancora necessario per aggiornare la visualizzazione della chat
-
 
 
 
