@@ -450,109 +450,191 @@ if st.session_state.page == "home":
 # PAGINA: IA
 # ===============================================================
     #--- UI per l'inserimento della Chiave API ---
+
+def configure_gemini_api():
+    """Configura l'API Gemini usando Streamlit Secrets o input utente"""
+    
+    # Prova prima con Streamlit Secrets (per deployment sicuro)
+    try:
+        if "GEMINI_API_KEY" in st.secrets:
+            api_key = st.secrets["GEMINI_API_KEY"]
+            genai.configure(api_key=api_key)
+            st.sidebar.success("✅ API configurata tramite Secrets!")
+            return genai.GenerativeModel('gemini-1.5-flash'), True
+    except Exception as e:
+        st.sidebar.info("ℹ️ Secrets non configurati, usa input manuale")
+    
+    # Fallback: input manuale
     st.sidebar.title("Configurazione API")
     api_key_input = st.sidebar.text_input(
         "Inserisci qui la tua Chiave API di Google Gemini:",
-        type="password", # Nasconde il testo per sicurezza
-        help="Puoi ottenere la tua chiave API su Google AI Studio (https://makersuite.google.com/app)."
+        type="password",
+        help="Puoi ottenere la tua chiave API su Google AI Studio (https://makersuite.google.com/app).",
+        key="gemini_api_key_input"
     )
-
-    model = None
-    api_configured = False
-
+    
     if api_key_input:
         try:
             genai.configure(api_key=api_key_input)
-            model = genai.GenerativeModel('gemini-1.5-flash') # Modello aggiornato
-            st.sidebar.success("Chiave API configurata con successo!")
-            api_configured = True
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            st.sidebar.success("✅ Chiave API configurata con successo!")
+            return model, True
         except Exception as e:
-            st.sidebar.error(f"Errore durante la configurazione dell'API: {e}")
-            api_configured = False
+            st.sidebar.error(f"❌ Errore durante la configurazione dell'API: {e}")
+            return None, False
     else:
-        st.sidebar.warning("Inserisci la tua Chiave API di Google Gemini per iniziare la chat.")
-        api_configured = False
+        st.sidebar.warning("⚠️ Inserisci la tua Chiave API di Google Gemini per iniziare la chat.")
+        return None, False
 
+# ===============================================================
+# FUNZIONE MIGLIORATA PER GENERARE RISPOSTE
+# ===============================================================
 
-    # === Funzione per interagire con Google Gemini ===
-    def generate_reply_gemini(messages, current_model):
+    def generate_reply_gemini_improved(messages, current_model):
+        """Funzione migliorata con gestione errori robusta"""
         try:
+            # Estrai system instruction
             system_instruction = ""
-            if messages and messages[0]["role"] == "system":
-                system_instruction = messages[0]["content"]
-                chat_messages = messages[1:]
-            else:
-                chat_messages = messages
+            chat_messages = []
             
+            for msg in messages:
+                if msg["role"] == "system":
+                    system_instruction = msg["content"]
+                else:
+                    chat_messages.append(msg)
+            
+            # Formatta messaggi per Gemini
             formatted_messages = []
             for msg in chat_messages:
                 if msg["role"] == "user":
-                    formatted_messages.append({'role':'user', 'parts': [msg["content"]]})
+                    formatted_messages.append({
+                        'role': 'user', 
+                        'parts': [msg["content"]]
+                    })
                 elif msg["role"] == "assistant":
-                    formatted_messages.append({'role':'model', 'parts': [msg["content"]]})
-
-            chat = current_model.start_chat(history=formatted_messages)
+                    formatted_messages.append({
+                        'role': 'model', 
+                        'parts': [msg["content"]]
+                    })
             
-            if formatted_messages:
-                # Assicurati che l'ultimo messaggio sia dell'utente per inviarlo
-                if formatted_messages[-1]['role'] == 'user':
-                    response = chat.send_message(formatted_messages[-1]['parts'][0])
-                    return response.text.strip()
-                else:
-                    return "Errore: L'ultimo messaggio nella cronologia non è dell'utente."
+            # Se non ci sono messaggi, ritorna errore
+            if not formatted_messages:
+                return "Nessun messaggio da elaborare."
+            
+            # Avvia chat con la cronologia (escluso l'ultimo messaggio)
+            history = formatted_messages[:-1] if len(formatted_messages) > 1 else []
+            chat = current_model.start_chat(history=history)
+            
+            # Prendi l'ultimo messaggio dell'utente
+            if formatted_messages and formatted_messages[-1]['role'] == 'user':
+                last_message = formatted_messages[-1]['parts'][0]
+                
+                # Aggiungi system instruction se presente
+                if system_instruction:
+                    last_message = f"{system_instruction}\n\n{last_message}"
+                
+                response = chat.send_message(last_message)
+                return response.text.strip()
             else:
-                return "Nessun messaggio utente da inviare."
+                return "❌ Errore: L'ultimo messaggio deve essere dell'utente."
                 
         except Exception as e:
-            return f"Errore API Gemini: {str(e)}"
-
-
-    # --- Inizializza la memoria della chat ---
-    if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Sei un esperto personal trainer e nutrizionista virtuale. "
-                    "Rispondi sempre in italiano in modo professionale, chiaro e amichevole. "
-                    "Dai consigli utili su dieta, esercizio fisico e benessere."
-                )
-            }
-        ]
-
-    # === UI Chat ===
-
-    with st.expander("💬 Chat con il Personal Trainer IA", expanded=False):
-        # Mostra la conversazione storica
-        for msg in st.session_state.messages:
-            if msg["role"] == "user":
-                st.markdown(f"**Tu:** {msg['content']}")
-            elif msg["role"] == "assistant":
-                st.markdown(f"**Personal Trainer IA:** {msg['content']}")
-            # Il messaggio di sistema non viene mostrato direttamente nella chat
-
-        # --- Nuovo approccio con st.form ---
-        # Creiamo un form per gestire l'invio dell'input dell'utente
-        with st.form(key='chat_form', clear_on_submit=True):
-            user_input = st.text_input(
-                "Scrivi qualcosa al tuo personal trainer:",
-                key="user_input_box",
-                disabled=not api_configured
-            )
-            submit_button = st.form_submit_button(label='Invia', disabled=not api_configured)
-
-            if submit_button and user_input and api_configured:
-                # Aggiungi il messaggio dell'utente alla session_state
-                st.session_state.messages.append({"role": "user", "content": user_input})
+            error_msg = str(e).lower()
+            if "api" in error_msg and "key" in error_msg:
+                return "❌ Errore: Chiave API non valida o scaduta"
+            elif "quota" in error_msg or "limit" in error_msg:
+                return "❌ Errore: Quota API esaurita o limite raggiunto"
+            elif "rate" in error_msg:
+                return "❌ Errore: Troppi request. Riprova tra qualche secondo"
+            else:
+                return f"❌ Errore API Gemini: {str(e)}"
+    
+    # ===============================================================
+    # SEZIONE CHAT CORRETTA
+    # ===============================================================
+    
+    def sezione_chat_ia():
+        """Sezione chat completa e funzionante"""
+        
+        st.subheader("💬 Chat con il Personal Trainer IA")
+        
+        # Configura API
+        model, api_configured = configure_gemini_api()
+        
+        # Inizializza messaggi se non esistono
+        if "messages" not in st.session_state:
+            st.session_state.messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "Sei un esperto personal trainer e nutrizionista virtuale. "
+                        "Rispondi sempre in italiano in modo professionale, chiaro e amichevole. "
+                        "Dai consigli utili su dieta, esercizio fisico e benessere. "
+                        "Mantieni le risposte concise ma complete."
+                    )
+                }
+            ]
+        
+        # Container per i messaggi
+        chat_container = st.container()
+        
+        with chat_container:
+            # Mostra conversazione (escludi system message dalla visualizzazione)
+            for msg in st.session_state.messages:
+                if msg["role"] == "user":
+                    with st.chat_message("user", avatar="🏋️"):
+                        st.write(msg["content"])
+                elif msg["role"] == "assistant":
+                    with st.chat_message("assistant", avatar="🤖"):
+                        st.write(msg["content"])
+        
+        # Sezione input
+        if api_configured:
+            # Pulsante per pulire la chat
+            col1, col2 = st.columns([1, 6])
+            with col1:
+                if st.button("🗑️ Pulisci Chat"):
+                    st.session_state.messages = [st.session_state.messages[0]]  # Mantieni solo system message
+                    st.rerun()
+            
+            # Input dell'utente
+            user_input = st.chat_input("Scrivi al tuo personal trainer...")
+            
+            if user_input:
+                # Aggiungi messaggio utente
+                st.session_state.messages.append({
+                    "role": "user", 
+                    "content": user_input
+                })
                 
-                # Genera la risposta usando Gemini
-                reply = generate_reply_gemini(st.session_state.messages, model)
+                # Mostra messaggio utente immediatamente
+                with st.chat_message("user", avatar="🏋️"):
+                    st.write(user_input)
                 
-                # Aggiungi la risposta dell'assistente alla session_state
-                st.session_state.messages.append({"role": "assistant", "content": reply})
+                # Genera e mostra risposta
+                with st.chat_message("assistant", avatar="🤖"):
+                    with st.spinner("Il trainer sta pensando..."):
+                        reply = generate_reply_gemini_improved(
+                            st.session_state.messages, 
+                            model
+                        )
+                        st.write(reply)
                 
-                # Ricarica l'applicazione per mostrare i nuovi messaggi
-                st.rerun() # Ancora necessario per aggiornare la visualizzazione della chat
+                # Salva risposta nella sessione
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": reply
+                })
+                
+                # Ricarica per aggiornare la visualizzazione
+                st.rerun()
+        else:
+            st.info("🔑 Configura l'API nella sidebar per iniziare la chat")
+            st.write("**Come ottenere la chiave API:**")
+            st.write("1. Vai su [Google AI Studio](https://makersuite.google.com/app)")
+            st.write("2. Accedi con il tuo account Google")
+            st.write("3. Clicca su 'Get API Key' e crea una nuova chiave")
+            st.write("4. Copia la chiave e incollala nella sidebar")
 
 
 
