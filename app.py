@@ -451,40 +451,40 @@ if st.session_state.page == "home":
 # ===============================================================
     #--- UI per l'inserimento della Chiave API ---
 
-def configure_gemini_api():
-    """Configura l'API Gemini usando Streamlit Secrets o input utente"""
-    
-    # Prova prima con Streamlit Secrets (per deployment sicuro)
-    try:
-        if "GEMINI_API_KEY" in st.secrets:
-            api_key = st.secrets["GEMINI_API_KEY"]
-            genai.configure(api_key=api_key)
-            st.sidebar.success("✅ API configurata tramite Secrets!")
-            return genai.GenerativeModel('gemini-1.5-flash'), True
-    except Exception as e:
-        st.sidebar.info("ℹ️ Secrets non configurati, usa input manuale")
-    
-    # Fallback: input manuale
-    st.sidebar.title("Configurazione API")
-    api_key_input = st.sidebar.text_input(
-        "Inserisci qui la tua Chiave API di Google Gemini:",
-        type="password",
-        help="Puoi ottenere la tua chiave API su Google AI Studio (https://makersuite.google.com/app).",
-        key="gemini_api_key_input"
-    )
-    
-    if api_key_input:
+    def configure_gemini_api():
+        """Configura l'API Gemini usando Streamlit Secrets o input utente"""
+        
+        # Prova prima con Streamlit Secrets (per deployment sicuro)
         try:
-            genai.configure(api_key=api_key_input)
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            st.sidebar.success("✅ Chiave API configurata con successo!")
-            return model, True
+            if "GEMINI_API_KEY" in st.secrets:
+                api_key = st.secrets["GEMINI_API_KEY"]
+                genai.configure(api_key=api_key)
+                st.sidebar.success("✅ API configurata tramite Secrets!")
+                return genai.GenerativeModel('gemini-1.5-flash'), True
         except Exception as e:
-            st.sidebar.error(f"❌ Errore durante la configurazione dell'API: {e}")
+            st.sidebar.info("ℹ️ Secrets non configurati, usa input manuale")
+        
+        # Fallback: input manuale
+        st.sidebar.title("Configurazione API")
+        api_key_input = st.sidebar.text_input(
+            "Inserisci qui la tua Chiave API di Google Gemini:",
+            type="password",
+            help="Puoi ottenere la tua chiave API su Google AI Studio (https://makersuite.google.com/app).",
+            key="gemini_api_key_input"
+        )
+        
+        if api_key_input:
+            try:
+                genai.configure(api_key=api_key_input)
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                st.sidebar.success("✅ Chiave API configurata con successo!")
+                return model, True
+            except Exception as e:
+                st.sidebar.error(f"❌ Errore durante la configurazione dell'API: {e}")
+                return None, False
+        else:
+            st.sidebar.warning("⚠️ Inserisci la tua Chiave API di Google Gemini per iniziare la chat.")
             return None, False
-    else:
-        st.sidebar.warning("⚠️ Inserisci la tua Chiave API di Google Gemini per iniziare la chat.")
-        return None, False
 
 # ===============================================================
 # FUNZIONE MIGLIORATA PER GENERARE RISPOSTE
@@ -502,7 +502,7 @@ def configure_gemini_api():
                     system_instruction = msg["content"]
                 else:
                     chat_messages.append(msg)
-            
+                
             # Formatta messaggi per Gemini
             formatted_messages = []
             for msg in chat_messages:
@@ -520,15 +520,15 @@ def configure_gemini_api():
             # Se non ci sono messaggi, ritorna errore
             if not formatted_messages:
                 return "Nessun messaggio da elaborare."
-            
+                
             # Avvia chat con la cronologia (escluso l'ultimo messaggio)
             history = formatted_messages[:-1] if len(formatted_messages) > 1 else []
             chat = current_model.start_chat(history=history)
-            
+                
             # Prendi l'ultimo messaggio dell'utente
             if formatted_messages and formatted_messages[-1]['role'] == 'user':
                 last_message = formatted_messages[-1]['parts'][0]
-                
+                    
                 # Aggiungi system instruction se presente
                 if system_instruction:
                     last_message = f"{system_instruction}\n\n{last_message}"
@@ -537,7 +537,7 @@ def configure_gemini_api():
                 return response.text.strip()
             else:
                 return "❌ Errore: L'ultimo messaggio deve essere dell'utente."
-                
+                    
         except Exception as e:
             error_msg = str(e).lower()
             if "api" in error_msg and "key" in error_msg:
