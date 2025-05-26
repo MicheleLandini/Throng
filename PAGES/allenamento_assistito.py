@@ -1132,7 +1132,7 @@ def mostra_pagina():
                         ])
                     
                     comparison_df = pd.DataFrame(comparison_data, 
-                                            columns=['Metrica', f'{w1["name"]}', f'{w2["name"]}', 'Migliore'])
+                                                columns=['Metrica', f'{w1["name"]} (1)', f'{w2["name"]} (2)', 'Migliore'])
                     
                     st.dataframe(comparison_df, use_container_width=True)
                     
