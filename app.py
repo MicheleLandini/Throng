@@ -1062,7 +1062,7 @@ if st.session_state.page == "stile_scheda":
         "Scegli dimensione immagine (px: Default = 500 x 500)",
         min_value=100,
         max_value=1000,
-        value=settings.get("dimimm", 500),
+        value=settings.get("dimimm", 250),
         step=50
     )
     st.write(f"Dimensione immagine selezionata: {dimimm} x {dimimm} px")
@@ -1073,7 +1073,7 @@ if st.session_state.page == "stile_scheda":
         "Scegli dimensione immagine (valori da: 1 a 8)",
         min_value=1,
         max_value=8,
-        value=settings.get("dimimmes", 4),
+        value=settings.get("dimimmes", 3),
         step=1
     )
     st.write(f"Dimensione immagini esercizi: {dimimmes} px")
@@ -1091,7 +1091,7 @@ if st.session_state.page == "stile_scheda":
         st.markdown("### Colore testo 🎨")
         colortxt = st.color_picker(
             "Scegli colore testo",
-            value=settings.get("colore_testo", "#000000")
+            value=settings.get("colore_testo", "#161313")
         )
         st.write("Colore testo selezionato:", colortxt)
 
@@ -1100,7 +1100,7 @@ if st.session_state.page == "stile_scheda":
         st.markdown("### Colore titolo 🎨")
         colortit = st.color_picker(
             "Scegli colore titoli",
-            value=settings.get("colore_titoli", "#ffffff")
+            value=settings.get("colore_titoli", "#68963d")
         )
         st.write("Colore titolo selezionato:", colortit)
 
@@ -1108,7 +1108,7 @@ if st.session_state.page == "stile_scheda":
         st.markdown("### Colore giorni della sett. 🎨")
         colorgset = st.color_picker(
             "Scegli colore giorni",
-            value=settings.get("colore_g_settimana", "#000000")
+            value=settings.get("colore_g_settimana", "#312d2d")
         )
         st.write("Colore giorni sett. selezionato:", colorgset)
 
@@ -1119,7 +1119,7 @@ if st.session_state.page == "stile_scheda":
     selected_font = st.selectbox(
         "Seleziona font per il PDF",
         font_options,
-        index=font_options.index(settings.get("font", "Helvetica"))
+        index=font_options.index(settings.get("font", "Times-Roman"))
         if settings.get("font") in font_options else 0
     )
     st.write(f"Hai selezionato il font: {selected_font}")
@@ -1132,7 +1132,7 @@ if st.session_state.page == "stile_scheda":
         "Scegli dimensione titoli (pt)",
         min_value=6,
         max_value=48,
-        value=settings.get("dimtitoli", 18),
+        value=settings.get("dimtitoli", 16),
         step=1,
         key="numinput_dimtitoli"
     )
@@ -1144,7 +1144,7 @@ if st.session_state.page == "stile_scheda":
         "Scegli dimensione giorni della settimana (pt)",
         min_value=6,
         max_value=48,
-        value=settings.get("dimgset", 14),
+        value=settings.get("dimgset", 20),
         step=1,
         key="numinput_dimgset"
     )
@@ -1156,7 +1156,7 @@ if st.session_state.page == "stile_scheda":
         "Scegli dimensione testi (pt)",
         min_value=6,
         max_value=48,
-        value=settings.get("dimtesti", 12),
+        value=settings.get("dimtesti", 14),
         step=1,
         key="numinput_dimtesti"
     )
